@@ -35,7 +35,7 @@ clean:
 	\rm -f $(TEST_FILE)
 
 archive: clean
-	(cd .. ; tar cvf minishell-`whoami`.tar minishell)
+	(cd .. ; tar cvf minishell-edreumon.tar minishell)
 
 help:
 	@echo "Makefile for minishell."
