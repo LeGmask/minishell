@@ -1,8 +1,33 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "readcmd.h"
 #include <stdbool.h>
 #include <string.h>
+#include <sys/wait.h>
+
+/**
+ * Process and run a commend in a forked process
+ *
+ * @param cmd
+ * @param backgrounded
+ */
+void handleCmd(char **cmd, bool backgrounded) {
+    pid_t pid_fork;
+    pid_fork = fork();
+
+    if (pid_fork == -1) {
+        printf("echec du fork");
+    } else if (pid_fork == 0) { // Fils
+        execvp(cmd[0], cmd);
+        exit(EXIT_FAILURE);
+    } else { // père
+        if (!backgrounded) {
+            int cmdStatus;
+            wait(&cmdStatus); // attente de la fin de la commande
+        }
+    }
+}
 
 int main(void) {
     bool fini = false;
@@ -17,7 +42,6 @@ int main(void) {
             exit(EXIT_FAILURE);
 
         } else {
-
             if (commande->err) {
                 // commande->err != NULL -> commande->seq == NULL
                 printf("erreur saisie de la commande : %s\n", commande->err);
@@ -37,12 +61,7 @@ int main(void) {
                             fini = true;
                             printf("Au revoir ...\n");
                         } else {
-                            printf("commande : ");
-                            int indexcmd = 0;
-                            while (cmd[indexcmd]) {
-                                printf("%s ", cmd[indexcmd]);
-                                indexcmd++;
-                            }
+                            handleCmd(cmd, commande->backgrounded);
                             printf("\n");
                         }
 
