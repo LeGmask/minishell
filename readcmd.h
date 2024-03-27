@@ -9,6 +9,7 @@
  */
 
 struct cmdline *readcmd(void);
+
 /* Structure retournée par readcmd()
  * Remarques utiles :
  *    - readcmd() peut retourner null, dans le cas où le processus en attente sur readcmd reçoit un signal
@@ -16,12 +17,12 @@ struct cmdline *readcmd(void);
  *      readcmd() réutilise la mémoire allouée à la structure cmdline qu'elle retourne
  */
 struct cmdline {
-	char *err;	/* Si non null : message d'erreur à afficher. 
+    char *err;    /* Si non null : message d'erreur à afficher.
 				 * Dans ce cas, les autres champs sont nuls. */
-	char *in;	/* Si non null : nom du fichier vers lequel l'entrée doit être redirigée. */
-	char *out;	/* Si non null : nom du fichier vers lequel la sortie doit être redirigée. */
-	char *backgrounded; /* Si non null : commande en tâche de fond */ 
-	char ***seq;	/* Une ligne de commande est une suite de commandes liées par des tubes
+    char *in;    /* Si non null : nom du fichier vers lequel l'entrée doit être redirigée. */
+    char *out;    /* Si non null : nom du fichier vers lequel la sortie doit être redirigée. */
+    char *backgrounded; /* Si non null : commande en tâche de fond */
+    char ***seq;    /* Une ligne de commande est une suite de commandes liées par des tubes
 					 * Ainsi, 
 					 * - une commande est un tableau de chaînes de caractères (char **).
                      *   Chaque élément de ce tableau est en effet une chaîne (char *)
