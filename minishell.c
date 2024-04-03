@@ -20,6 +20,7 @@ void handleCmd(char **cmd, bool backgrounded) {
         printf("echec du fork");
     } else if (pid_fork == 0) { // Fils
         execvp(cmd[0], cmd);
+        printf("erreur lors de l'éxécution de la commande : %s\n", *cmd);
         exit(EXIT_FAILURE);
     } else { // père
         if (!backgrounded) {
@@ -47,12 +48,6 @@ int main(void) {
                 printf("erreur saisie de la commande : %s\n", commande->err);
 
             } else {
-
-                /* Pour le moment le programme ne fait qu'afficher les commandes 
-                   tapees et les affiche à l'écran. 
-                   Cette partie est à modifier pour considérer l'exécution de ces
-                   commandes 
-                */
                 int indexseq = 0;
                 char **cmd;
                 while ((cmd = commande->seq[indexseq])) {
