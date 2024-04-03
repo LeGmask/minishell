@@ -5,6 +5,39 @@
 #include <stdbool.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/types.h>
+#include <signal.h>
+
+int foreground_cmd = 0;
+
+/**
+ * Handle child process
+ */
+void child_handler(void) {
+    int cmdStatus;
+    pid_t pid_child;
+
+    do {
+        pid_child = waitpid(-1, &cmdStatus, WNOHANG | WUNTRACED | WCONTINUED);
+
+        if (foreground_cmd == pid_child) {
+            foreground_cmd = 0;
+        }
+
+        if (pid_child > 0) {
+            if (WIFEXITED(cmdStatus)) {
+                printf("Le processus %d s'est terminé normalement avec le code %d\n", pid_child, WEXITSTATUS(cmdStatus));
+            } else if (WIFSIGNALED(cmdStatus)) {
+                printf("Le processus %d s'est terminé anormalement avec le code %d\n", pid_child, WTERMSIG(cmdStatus));
+            } else if (WIFSTOPPED(cmdStatus)) {
+                printf("Le processus %d a été stoppé par le signal %d\n", pid_child, WSTOPSIG(cmdStatus));
+            } else if (WIFCONTINUED(cmdStatus)) {
+                printf("Le processus %d a été relancé\n", pid_child);
+            }
+        }
+
+    } while (pid_child > 0);
+}
 
 /**
  * Process and run a commend in a forked process
@@ -24,14 +57,32 @@ void handleCmd(char **cmd, bool backgrounded) {
         exit(EXIT_FAILURE);
     } else { // père
         if (!backgrounded) {
-            int cmdStatus;
-            wait(&cmdStatus); // attente de la fin de la commande
+            foreground_cmd = pid_fork;
+            while (foreground_cmd > 0) {
+                pause();
+            }
         }
     }
 }
 
+/**
+ * Setup signal handler
+ * SIGCHLD
+ * SIGCHLD is sent to the parent of a child process when the child process terminates, is stopped, or is continued.
+ */
+void setup(void) {
+    // SIGCHLD handler
+    struct sigaction sigchld_action;
+    sigchld_action.sa_handler = (__sighandler_t) child_handler;
+    sigemptyset(&sigchld_action.sa_mask);
+    sigchld_action.sa_flags = SA_RESTART;
+    sigaction(SIGCHLD, &sigchld_action, NULL);
+}
+
 int main(void) {
     bool fini = false;
+
+    setup();
 
     while (!fini) {
         printf("> ");
