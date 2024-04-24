@@ -14,6 +14,24 @@
 int foreground_cmd = 0;
 
 /**
+ * set sigaction for a signal
+ * @param signal : signal to set
+ * @param handler : handler to set
+ */
+int set_signal(int signal, void (*handler)(int)) {
+    struct sigaction action;
+    action.sa_handler = handler;
+    action.sa_flags = SA_RESTART;
+    sigemptyset(&action.sa_mask);
+    return sigaction(signal, &action, NULL);
+}
+
+void handle_SIGINT_SIGTSTP(int signal) {
+    (void) signal;
+    printf("\n");
+}
+
+/**
  * Handle child process
  */
 void child_handler(void) {
@@ -56,11 +74,20 @@ void handleCmd(char **cmd, bool backgrounded) {
     if (pid_fork == -1) {
         printf("echec du fork");
     } else if (pid_fork == 0) { // Fils
+        if (!backgrounded) {
+            // the program is in foreground -> unblock SIGINT and SIGTSTP
+            sigset_t toUnMask;
+            sigprocmask(SIG_BLOCK, NULL, &toUnMask);
+            sigprocmask(SIG_UNBLOCK, &toUnMask, NULL);
+        }
+
         execvp(cmd[0], cmd);
+        set_signal(SIGINT, SIG_DFL);
         printf("erreur lors de l'éxécution de la commande : %s\n", *cmd);
         exit(EXIT_FAILURE);
     } else { // père
         if (!backgrounded) {
+            setpgrp();
             foreground_cmd = pid_fork;
             while (foreground_cmd > 0) {
                 pause();
@@ -69,23 +96,20 @@ void handleCmd(char **cmd, bool backgrounded) {
     }
 }
 
-/**
- * Setup signal handler
- * SIGCHLD
- * SIGCHLD is sent to the parent of a child process when the child process terminates, is stopped, or is continued.
- */
-void setupSIGCHLDhandler(void) {
-    struct sigaction sigchld_action;
-    sigchld_action.sa_handler = (__sighandler_t) child_handler;
-    sigemptyset(&sigchld_action.sa_mask);
-    sigchld_action.sa_flags = SA_RESTART;
-    sigaction(SIGCHLD, &sigchld_action, NULL);
-}
 
 int main(void) {
     bool fini = false;
 
-    setupSIGCHLDhandler();
+    // Setup SIGCHLD handler
+    set_signal(SIGCHLD, (__sighandler_t) child_handler);
+
+    // Ignore SIGINT and SIGTSTP
+    sigset_t toMask;
+    sigemptyset(&toMask);
+    sigaddset(&toMask, SIGINT);
+    sigaddset(&toMask, SIGTSTP);
+    sigprocmask(SIG_BLOCK, &toMask, NULL);
+
 
     while (!fini) {
         printf("> ");
