@@ -8,6 +8,9 @@
 #include <sys/types.h>
 #include <signal.h>
 
+/**
+ * Store the pid of the current foreground command
+ */
 int foreground_cmd = 0;
 
 /**
@@ -26,7 +29,8 @@ void child_handler(void) {
 
         if (pid_child > 0) {
             if (WIFEXITED(cmdStatus)) {
-                printf("Le processus %d s'est terminé normalement avec le code %d\n", pid_child, WEXITSTATUS(cmdStatus));
+                printf("Le processus %d s'est terminé normalement avec le code %d\n", pid_child,
+                       WEXITSTATUS(cmdStatus));
             } else if (WIFSIGNALED(cmdStatus)) {
                 printf("Le processus %d s'est terminé anormalement avec le code %d\n", pid_child, WTERMSIG(cmdStatus));
             } else if (WIFSTOPPED(cmdStatus)) {
@@ -70,8 +74,7 @@ void handleCmd(char **cmd, bool backgrounded) {
  * SIGCHLD
  * SIGCHLD is sent to the parent of a child process when the child process terminates, is stopped, or is continued.
  */
-void setup(void) {
-    // SIGCHLD handler
+void setupSIGCHLDhandler(void) {
     struct sigaction sigchld_action;
     sigchld_action.sa_handler = (__sighandler_t) child_handler;
     sigemptyset(&sigchld_action.sa_mask);
@@ -82,7 +85,7 @@ void setup(void) {
 int main(void) {
     bool fini = false;
 
-    setup();
+    setupSIGCHLDhandler();
 
     while (!fini) {
         printf("> ");
