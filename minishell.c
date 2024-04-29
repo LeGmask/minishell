@@ -7,11 +7,14 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <signal.h>
+#include <fcntl.h>
 
 /**
  * Store the pid of the current foreground command
  */
 int foreground_cmd = 0;
+
+
 
 /**
  * set sigaction for a signal
@@ -71,19 +74,54 @@ void child_handler(void) {
 }
 
 /**
+ * Try to open a file and run dup2 with fd
+ *
+ * @param file the file to open
+ * @param flags the flags to open the file
+ * @param mode the mode to open the file
+ * @param fd the file descriptor to dup2
+ */
+void openAndDup(char *file, int flags, int mode, int fd) {
+    int file_fd = open(file, flags, mode);
+    if (file_fd == -1) {
+        char msg[100];
+        sprintf(msg, "Erreur ouverture fichier: \"%s\"\n", file);
+        write(STDERR_FILENO, msg, strlen(msg));
+        exit(EXIT_FAILURE);
+    }
+
+    if (dup2(file_fd, fd) == -1) {
+        write(STDERR_FILENO, "Erreur dup2\n", 12);
+        exit(EXIT_FAILURE);
+    }
+
+    close(file_fd);
+}
+
+void handleRedirects(struct cmdline *pCmdline) {
+    if (pCmdline->in) {
+        openAndDup(pCmdline->in, O_RDONLY, 0644, STDIN_FILENO);
+    }
+
+    if (pCmdline->out) {
+        openAndDup(pCmdline->out, O_WRONLY | O_TRUNC | O_CREAT, 0644, STDOUT_FILENO);
+    }
+}
+
+/**
  * Process and run a commend in a forked process
  *
  * @param cmd
  * @param backgrounded
  */
-void handleCmd(char **cmd, bool backgrounded) {
+void handleCmd(char **cmd, struct cmdline *command) {
     sigset_t toUnMask; // to unmask signals
     pid_t pid_fork;
     pid_fork = fork();
 
     switch (pid_fork) {
         case -1:
-            printf("echec du fork");
+            write(STDERR_FILENO, "Erreur fork\n", 12);
             break;
 
         case 0: // Fils
@@ -91,11 +129,10 @@ void handleCmd(char **cmd, bool backgrounded) {
             sigprocmask(SIG_BLOCK, NULL, &toUnMask);
             sigprocmask(SIG_UNBLOCK, &toUnMask, NULL);
 
-            if (backgrounded) {
+            if (command->backgrounded) {
                 // the program is in background -> detach from the terminal process group
                 setpgid(0, 0);
             }
-
 
 //          if (!backgrounded) {
 //                // the program is in foreground -> unMask SIGINT and SIGTSTP
@@ -110,16 +147,19 @@ void handleCmd(char **cmd, bool backgrounded) {
 //              set_signal(SIGTSTP, SIG_DFL);
 //          }
 
+            // Redirect input and output
+            handleRedirects(command);
+
             execvp(cmd[0], cmd);
 
             // Solution 1.
 //          set_signal(SIGINT, SIG_IGN);
 //          set_signal(SIGTSTP, SIG_IGN);
-            printf("erreur lors de l'éxécution de la commande : %s\n", *cmd);
+            printf("erreur lors de l'éxécution de la command : %s\n", *cmd);
             exit(EXIT_FAILURE);
 
         default: // père
-            if (!backgrounded) {
+            if (!command->backgrounded) {
                 foreground_cmd = pid_fork;
                 while (foreground_cmd > 0) {
                     pause();
@@ -166,7 +206,7 @@ int main(void) {
                             fini = true;
                             printf("Au revoir ...\n");
                         } else {
-                            handleCmd(cmd, commande->backgrounded);
+                            handleCmd(cmd, commande);
                             printf("\n");
                         }
 
