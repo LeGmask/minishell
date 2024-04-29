@@ -77,52 +77,55 @@ void child_handler(void) {
  * @param backgrounded
  */
 void handleCmd(char **cmd, bool backgrounded) {
+    sigset_t toUnMask; // to unmask signals
     pid_t pid_fork;
     pid_fork = fork();
 
-    if (pid_fork == -1) {
-        printf("echec du fork");
-    } else if (pid_fork == 0) { // Fils
-        // UnMask all signals
-        sigset_t toUnMask;
-        sigprocmask(SIG_BLOCK, NULL, &toUnMask);
-        sigprocmask(SIG_UNBLOCK, &toUnMask, NULL);
+    switch (pid_fork) {
+        case -1:
+            printf("echec du fork");
+            break;
 
-        if (backgrounded) {
-            // the program is in background -> detach from the terminal process group
-            setpgid(0, 0);
-        }
+        case 0: // Fils
+            // UnMask all signals
+            sigprocmask(SIG_BLOCK, NULL, &toUnMask);
+            sigprocmask(SIG_UNBLOCK, &toUnMask, NULL);
 
-
-//        if (!backgrounded) {
-            // the program is in foreground -> unMask SIGINT and SIGTSTP
-            // Solution 2.
-//            sigset_t toUnMask;
-//            toUnMask = getMask_SIGINT_SIGTSTP();
-//            sigprocmask(SIG_UNBLOCK, &toUnMask, NULL);
-
-            // UnIgnore SIGINT and SIGTSTP
-            // Solution 1.
-//            set_signal(SIGINT, SIG_DFL);
-//            set_signal(SIGTSTP, SIG_DFL);
-
-            // detach from the terminal process group
-//        }
-
-        execvp(cmd[0], cmd);
-
-        // Solution 1.
-//        set_signal(SIGINT, SIG_IGN);
-//        set_signal(SIGTSTP, SIG_IGN);
-        printf("erreur lors de l'éxécution de la commande : %s\n", *cmd);
-        exit(EXIT_FAILURE);
-    } else { // père
-        if (!backgrounded) {
-            foreground_cmd = pid_fork;
-            while (foreground_cmd > 0) {
-                pause();
+            if (backgrounded) {
+                // the program is in background -> detach from the terminal process group
+                setpgid(0, 0);
             }
-        }
+
+
+//          if (!backgrounded) {
+//                // the program is in foreground -> unMask SIGINT and SIGTSTP
+//                // Solution 2.
+//              sigset_t toUnMask;
+//              toUnMask = getMask_SIGINT_SIGTSTP();
+//              sigprocmask(SIG_UNBLOCK, &toUnMask, NULL);
+
+//                // UnIgnore SIGINT and SIGTSTP
+//                // Solution 1.
+//              set_signal(SIGINT, SIG_DFL);
+//              set_signal(SIGTSTP, SIG_DFL);
+//          }
+
+            execvp(cmd[0], cmd);
+
+            // Solution 1.
+//          set_signal(SIGINT, SIG_IGN);
+//          set_signal(SIGTSTP, SIG_IGN);
+            printf("erreur lors de l'éxécution de la commande : %s\n", *cmd);
+            exit(EXIT_FAILURE);
+
+        default: // père
+            if (!backgrounded) {
+                foreground_cmd = pid_fork;
+                while (foreground_cmd > 0) {
+                    pause();
+                }
+            }
+            break;
     }
 }
 
