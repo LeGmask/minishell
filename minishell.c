@@ -26,9 +26,18 @@ int set_signal(int signal, void (*handler)(int)) {
     return sigaction(signal, &action, NULL);
 }
 
-void handle_SIGINT_SIGTSTP(int signal) {
-    (void) signal;
-    printf("\n");
+sigset_t getMask_SIGINT_SIGTSTP(void) {
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGTSTP);
+    return mask;
+}
+
+void setup_Mask_SIGINT_SIGTSTP(void) {
+    sigset_t toMask;
+    toMask = getMask_SIGINT_SIGTSTP();
+    sigprocmask(SIG_BLOCK, &toMask, NULL);
 }
 
 /**
@@ -74,20 +83,41 @@ void handleCmd(char **cmd, bool backgrounded) {
     if (pid_fork == -1) {
         printf("echec du fork");
     } else if (pid_fork == 0) { // Fils
-        if (!backgrounded) {
-            // the program is in foreground -> unblock SIGINT and SIGTSTP
-            sigset_t toUnMask;
-            sigprocmask(SIG_BLOCK, NULL, &toUnMask);
-            sigprocmask(SIG_UNBLOCK, &toUnMask, NULL);
+        // UnMask all signals
+        sigset_t toUnMask;
+        sigprocmask(SIG_BLOCK, NULL, &toUnMask);
+        sigprocmask(SIG_UNBLOCK, &toUnMask, NULL);
+
+        if (backgrounded) {
+            // the program is in background -> detach from the terminal process group
+            setpgid(0, 0);
         }
 
+
+//        if (!backgrounded) {
+            // the program is in foreground -> unMask SIGINT and SIGTSTP
+            // Solution 2.
+//            sigset_t toUnMask;
+//            toUnMask = getMask_SIGINT_SIGTSTP();
+//            sigprocmask(SIG_UNBLOCK, &toUnMask, NULL);
+
+            // UnIgnore SIGINT and SIGTSTP
+            // Solution 1.
+//            set_signal(SIGINT, SIG_DFL);
+//            set_signal(SIGTSTP, SIG_DFL);
+
+            // detach from the terminal process group
+//        }
+
         execvp(cmd[0], cmd);
-        set_signal(SIGINT, SIG_DFL);
+
+        // Solution 1.
+//        set_signal(SIGINT, SIG_IGN);
+//        set_signal(SIGTSTP, SIG_IGN);
         printf("erreur lors de l'éxécution de la commande : %s\n", *cmd);
         exit(EXIT_FAILURE);
     } else { // père
         if (!backgrounded) {
-            setpgrp();
             foreground_cmd = pid_fork;
             while (foreground_cmd > 0) {
                 pause();
@@ -104,12 +134,11 @@ int main(void) {
     set_signal(SIGCHLD, (__sighandler_t) child_handler);
 
     // Ignore SIGINT and SIGTSTP
-    sigset_t toMask;
-    sigemptyset(&toMask);
-    sigaddset(&toMask, SIGINT);
-    sigaddset(&toMask, SIGTSTP);
-    sigprocmask(SIG_BLOCK, &toMask, NULL);
+//    set_signal(SIGINT, SIG_IGN);
+//    set_signal(SIGTSTP, SIG_IGN);
 
+    // Mask SIGINT and SIGTSTP
+    setup_Mask_SIGINT_SIGTSTP();
 
     while (!fini) {
         printf("> ");
