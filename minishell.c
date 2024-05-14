@@ -14,7 +14,10 @@
  */
 int foreground_cmd = 0;
 
-
+/**
+ * Store the pipe file descriptors
+ */
+int pipefd[2];
 
 /**
  * set sigaction for a signal
@@ -29,6 +32,9 @@ int set_signal(int signal, void (*handler)(int)) {
     return sigaction(signal, &action, NULL);
 }
 
+/**
+ * Get the mask for SIGINT and SIGTSTP
+ */
 sigset_t getMask_SIGINT_SIGTSTP(void) {
     sigset_t mask;
     sigemptyset(&mask);
@@ -37,6 +43,9 @@ sigset_t getMask_SIGINT_SIGTSTP(void) {
     return mask;
 }
 
+/**
+ * Mask SIGINT and SIGTSTP
+ */
 void setup_Mask_SIGINT_SIGTSTP(void) {
     sigset_t toMask;
     toMask = getMask_SIGINT_SIGTSTP();
@@ -98,23 +107,50 @@ void openAndDup(char *file, int flags, int mode, int fd) {
     close(file_fd);
 }
 
-void handleRedirects(struct cmdline *pCmdline) {
-    if (pCmdline->in) {
+
+/**
+ * Run dup2 with oldfd and newfd and close oldfd
+ *
+ * @param oldfd old file descriptor
+ * @param newfd new file descriptor
+ */
+void dup2AndClose(int oldfd, int newfd) {
+    if (dup2(oldfd, newfd) == -1) {
+        write(STDERR_FILENO, "Erreur dup2\n", 12);
+        exit(EXIT_FAILURE);
+    }
+
+    close(oldfd);
+}
+
+/**
+ * Handle input and output redirections
+ *
+ * @param pCmdline the command line
+ * @param pipeIn the input pipe
+ * @param pipeOut the output pipe
+ */
+void handleRedirects(struct cmdline *pCmdline, int pipeIn, int pipeOut) {
+    if (pipeIn != -1) {
+        dup2AndClose(pipeIn, STDIN_FILENO);
+    } else if (pCmdline->in) {
         openAndDup(pCmdline->in, O_RDONLY, 0644, STDIN_FILENO);
     }
 
-    if (pCmdline->out) {
+    if (pipeOut != -1) {
+        dup2AndClose(pipeOut, STDOUT_FILENO);
+    } else if (pCmdline->out) {
         openAndDup(pCmdline->out, O_WRONLY | O_TRUNC | O_CREAT, 0644, STDOUT_FILENO);
     }
 }
 
 /**
- * Process and run a commend in a forked process
+ * Process and run a command in a forked process
  *
  * @param cmd
  * @param backgrounded
  */
-void handleCmd(char **cmd, struct cmdline *command) {
+void handleCmd(char **cmd, struct cmdline *command, int pipeIn, int pipeOut) {
     sigset_t toUnMask; // to unmask signals
     pid_t pid_fork;
     pid_fork = fork();
@@ -148,7 +184,7 @@ void handleCmd(char **cmd, struct cmdline *command) {
 //          }
 
             // Redirect input and output
-            handleRedirects(command);
+            handleRedirects(command, pipeIn, pipeOut);
 
             execvp(cmd[0], cmd);
 
@@ -169,20 +205,36 @@ void handleCmd(char **cmd, struct cmdline *command) {
     }
 }
 
+/**
+ * Handle sequence of commands (and piped if more than one)
+ *
+ * @param command   the command to handle
+ * @param indexseq  index of the command in the sequence
+ * @param isLastCmd boolean to know if the command is the last one
+ */
+void handlePipedCmd(struct cmdline *command, int indexseq, bool isLastCmd) {
+    int pipeIn = -1; // disable input pipe
+    int pipeOut = -1; // disable output pipe
 
-int main(void) {
+    if (indexseq > 0) {
+        pipeIn = pipefd[0];
+    }
+
+    if (!isLastCmd) {
+        pipe(pipefd);
+        pipeOut = pipefd[1];
+    }
+
+    handleCmd(command->seq[indexseq], command, pipeIn, pipeOut);
+    close(pipeIn); // close the input pipe used
+    close(pipeOut); // close the output pipe used
+}
+
+/**
+ * Main loop that handle the prompt
+ */
+void promptLoop(void) {
     bool fini = false;
-
-    // Setup SIGCHLD handler
-    set_signal(SIGCHLD, (__sighandler_t) child_handler);
-
-    // Ignore SIGINT and SIGTSTP
-//    set_signal(SIGINT, SIG_IGN);
-//    set_signal(SIGTSTP, SIG_IGN);
-
-    // Mask SIGINT and SIGTSTP
-    setup_Mask_SIGINT_SIGTSTP();
-
     while (!fini) {
         printf("> ");
         struct cmdline *commande = readcmd();
@@ -200,21 +252,39 @@ int main(void) {
             } else {
                 int indexseq = 0;
                 char **cmd;
+
                 while ((cmd = commande->seq[indexseq])) {
+                    bool isLastCmd = commande->seq[indexseq + 1] == NULL;
                     if (cmd[0]) {
                         if (strcmp(cmd[0], "exit") == 0) {
                             fini = true;
                             printf("Au revoir ...\n");
                         } else {
-                            handleCmd(cmd, commande);
+                            handlePipedCmd(commande, indexseq, isLastCmd);
                             printf("\n");
                         }
-
                         indexseq++;
                     }
                 }
             }
         }
     }
+}
+
+
+int main(void) {
+    // Setup SIGCHLD handler
+    set_signal(SIGCHLD, (__sighandler_t) child_handler);
+
+    // Ignore SIGINT and SIGTSTP
+//    set_signal(SIGINT, SIG_IGN);
+//    set_signal(SIGTSTP, SIG_IGN);
+
+    // Mask SIGINT and SIGTSTP
+    setup_Mask_SIGINT_SIGTSTP();
+
+    // Main loop that handle the prompt
+    promptLoop();
+
     return EXIT_SUCCESS;
 }
