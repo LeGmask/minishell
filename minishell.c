@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <signal.h>
 #include <fcntl.h>
+#include "running_cmd.h"
 
 /**
  * Store the pid of the current foreground command
@@ -18,6 +19,11 @@ int foreground_cmd = 0;
  * Store the pipe file descriptors
  */
 int pipefd[2];
+
+/**
+ * Store the list of backgrounded commands
+ */
+running_cmd_t *cmds = NULL;
 
 /**
  * set sigaction for a signal
@@ -62,20 +68,29 @@ void child_handler(void) {
     do {
         pid_child = waitpid(-1, &cmdStatus, WNOHANG | WUNTRACED | WCONTINUED);
 
-        if (foreground_cmd == pid_child) {
-            foreground_cmd = 0;
-        }
-
         if (pid_child > 0) {
             if (WIFEXITED(cmdStatus)) {
                 printf("Le processus %d s'est terminé normalement avec le code %d\n", pid_child,
                        WEXITSTATUS(cmdStatus));
+                remove_running_cmd(&cmds, pid_child);
+                if (foreground_cmd == pid_child) {
+                    foreground_cmd = 0;
+                }
             } else if (WIFSIGNALED(cmdStatus)) {
                 printf("Le processus %d s'est terminé anormalement avec le code %d\n", pid_child, WTERMSIG(cmdStatus));
+                remove_running_cmd(&cmds, pid_child);
+                if (foreground_cmd == pid_child) {
+                    foreground_cmd = 0;
+                }
             } else if (WIFSTOPPED(cmdStatus)) {
                 printf("Le processus %d a été stoppé par le signal %d\n", pid_child, WSTOPSIG(cmdStatus));
+                set_running_cmd_status(cmds, pid_child, SUSPENDED);
+                if (foreground_cmd == pid_child) {
+                    foreground_cmd = 0;
+                }
             } else if (WIFCONTINUED(cmdStatus)) {
                 printf("Le processus %d a été relancé\n", pid_child);
+                set_running_cmd_status(cmds, pid_child, RUNNING);
             }
         }
 
@@ -195,6 +210,7 @@ void handleCmd(char **cmd, struct cmdline *command, int pipeIn, int pipeOut) {
             exit(EXIT_FAILURE);
 
         default: // père
+            add_running_cmd(&cmds, pid_fork, command->seq[0][0]);
             if (!command->backgrounded) {
                 foreground_cmd = pid_fork;
                 while (foreground_cmd > 0) {
@@ -202,6 +218,29 @@ void handleCmd(char **cmd, struct cmdline *command, int pipeIn, int pipeOut) {
                 }
             }
             break;
+    }
+}
+
+/**
+ * Suspend a command
+ * @param pid
+ */
+void suspend_cmd(pid_t pid) {
+    kill(pid, SIGTSTP);
+}
+
+/**
+ * Resume a command
+ * @param pid
+ * @param isForeground
+ */
+void resume_cmd(pid_t pid, bool isForeground) {
+    kill(pid, SIGCONT);
+    if (isForeground) {
+        foreground_cmd = pid;
+        while (foreground_cmd > 0) {
+            pause();
+        }
     }
 }
 
@@ -259,6 +298,18 @@ void promptLoop(void) {
                         if (strcmp(cmd[0], "exit") == 0) {
                             fini = true;
                             printf("Au revoir ...\n");
+                        } else if (strcmp(cmd[0], "lj") == 0) {
+                            print_running_cmds(cmds); // print the list of backgrounded commands
+                            break;
+                        } else if (strcmp(cmd[0], "sj") == 0) {
+                            suspend_cmd(atoi(cmd[1])); // suspend a backgrounded command
+                            break;
+                        } else if (strcmp(cmd[0], "bg") == 0) {
+                            resume_cmd(atoi(cmd[1]), false); // resume to a background command
+                            break;
+                        } else if (strcmp(cmd[0], "fg") == 0) {
+                            resume_cmd(atoi(cmd[1]), true); // resume to a foreground command
+                            break;
                         } else {
                             handlePipedCmd(commande, indexseq, isLastCmd);
                             printf("\n");
@@ -285,6 +336,9 @@ int main(void) {
 
     // Main loop that handle the prompt
     promptLoop();
+
+    // Destroy the list of backgrounded commands
+    destroy_running_cmds(cmds);
 
     return EXIT_SUCCESS;
 }
