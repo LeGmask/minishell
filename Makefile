@@ -35,11 +35,11 @@ clean:
 	\rm -f $(TEST_FILE)
 
 archive: clean
-	(cd .. ; tar cvf minishell-edreumon.tar minishell)
+	(cd .. ; tar --exclude='minishell/.idea' -zcvf minishell-edreumon.tar minishell)
 
 help:
 	@echo "Makefile for minishell."
 	@echo "Targets:"
 	@echo " all             Build the minishell"
-	@echo " archive	 Archive the minishell"
+	@echo " archive	 		Archive the minishell"
 	@echo " clean           Clean artifacts"
